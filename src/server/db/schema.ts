@@ -115,10 +115,30 @@ export const verificationTokens = createTable(
   (table) => [index("verification_identifier_idx").on(table.identifier)],
 );
 
+export const requestLog = createTable(
+  "request_log",
+  {
+    id: serial("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id),
+    createdAt: timestamp("created_at", { precision: 6, withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("request_log_userId_createdAt_idx").on(table.userId, table.createdAt),
+  ],
+);
+
+export const requestLogRelations = relations(requestLog, ({ one }) => ({
+  user: one(user, { fields: [requestLog.userId], references: [user.id] }),
+}));
+
 // 分散定义，每个表单独调用 relations()
 export const userRelations = relations(user, ({ many }) => ({
-  // user 有多个 account
   accounts: many(account),
+  requestLogs: many(requestLog),
 }));
 export const accountRelations = relations(account, ({ one }) => ({
   // account 属于一个 user
@@ -143,4 +163,7 @@ export declare namespace DB {
   export type NewVerificationToken = InferInsertModel<
     typeof verificationTokens
   >;
+
+  export type RequestLog = InferSelectModel<typeof requestLog>;
+  export type NewRequestLog = InferInsertModel<typeof requestLog>;
 }

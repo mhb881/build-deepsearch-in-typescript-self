@@ -9,7 +9,9 @@ import {
 import { searchWeb } from "~/lib/ai-tools/searchWeb";
 import { model } from "~/lib/ai/model";
 import { auth } from "~/server/auth";
+import { checkRateLimit, logRequest } from "~/server/rate-limit";
 
+const MAX_REQUESTS_PER_DAY = 10;
 // 系统提示词
 const systemPrompt = `You are a helpful assistant with access to a web search tool.
 RULES:
@@ -34,14 +36,26 @@ export async function POST(req: Request) {
     });
   }
 
+  // 速率限制检查：超限返回 429，管理员自动放行
+  const { allowed } = await checkRateLimit(session.user.id);
+  if (!allowed) {
+    return new Response(
+      JSON.stringify({
+        error: `Rate limit exceeded. Maximum ${MAX_REQUESTS_PER_DAY} requests per day.`,
+      }),
+      {
+        status: 429,
+        statusText: "Too Many Requests",
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  }
+
   // 1. 前端 useChat 发送的是 UIMessage[]
-  //   const body = (await req.json()) as {
-  //     id: string;
-  //     messages: UIMessage[];
-  //     trigger: string;
-  //   };
-  //   const messages = body.messages;
   const { messages }: { messages: UIMessage[] } = await req.json();
+
+  // 记录请求到数据库
+  await logRequest(session.user.id);
 
   // 2. 将 UI 层消息转换为模型层消息
   const modelMessages = await convertToModelMessages(messages);
@@ -57,7 +71,7 @@ export async function POST(req: Request) {
     // ✅ 步骤 7：v7 中 maxSteps → stopWhen: isStepCount(n)
     stopWhen: isStepCount(10),
     // ✅ v7：onFinish → onEnd
-    onEnd: ({ text, usage }) => {
+    onEnd: ({ usage }) => {
       // console.log("Generation ended:", text);
       console.log("Token usage:", usage);
     },
