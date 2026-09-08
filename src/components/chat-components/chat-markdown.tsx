@@ -12,7 +12,7 @@ const components: Components = {
     </code>
   ),
   pre: ({ children }) => (
-    <pre className="mb-4 overflow-x-auto rounded-lg bg-gray-100 p-4 dark:bg-gray-700">
+    <pre className="mb-4 overflow-x-auto rounded-lg bg-gray-200 p-4 text-gray-800 dark:bg-gray-700 dark:text-gray-100">
       {children}
     </pre>
   ),

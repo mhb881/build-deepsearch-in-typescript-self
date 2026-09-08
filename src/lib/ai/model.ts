@@ -1,7 +1,7 @@
 import { google } from "@ai-sdk/google";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 
-const googleModel = google("gemini-3.6-flash");
+const googleModel = google("gemini-3.5-flash-lite");
 /*
 使用 SiliconFlow 模型生成文本示例：
 model: siliconflow.chatModel(
@@ -17,4 +17,4 @@ const siliconflow = createOpenAICompatible({
 });
 const siliconflowModel = siliconflow.chatModel("deepseek-ai/DeepSeek-V4-Flash");
 
-export const model = siliconflowModel;
+export const model = googleModel;

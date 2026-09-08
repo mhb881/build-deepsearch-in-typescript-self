@@ -6,7 +6,7 @@ import { eq, and, gte, sql } from "drizzle-orm";
  * 每日最大请求次数限制
  * 可根据业务需求调整：免费用户 10-20 次，付费用户 50-100 次
  */
-const MAX_REQUESTS_PER_DAY = 20;
+const MAX_REQUESTS_PER_DAY = 20; // 测试
 
 /**
  * 检查用户的速率限制状态
