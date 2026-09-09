@@ -1,3 +1,4 @@
+// 这个是 server component
 import { PlusIcon } from "lucide-react";
 import Link from "next/link";
 import { auth } from "~/server/auth";
@@ -14,13 +15,20 @@ const chats = [
 
 const activeChatId = "1";
 
-export default async function HomePage() {
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ chatId?: string; id?: string }>;
+}) {
   // On the server:  使用 auth 而不是 authClient
   const session = await auth.api.getSession({
     headers: await headers(),
   });
   const userName = session?.user?.name ?? "Guest";
   const isAuthenticated = !!session?.user; // 第一个 ! 将值取反并转为布尔值
+
+  const { chatId, id } = await searchParams;
+  const curChatId = chatId ?? id;
 
   return (
     <div className="flex h-screen bg-white dark:bg-gray-950">
@@ -76,7 +84,11 @@ export default async function HomePage() {
         </div>
       </div>
 
-      <ChatPage userName={userName} isAuthenticated={isAuthenticated} />
+      <ChatPage
+        userName={userName}
+        isAuthenticated={isAuthenticated}
+        chatId={curChatId}
+      />
     </div>
   );
 }

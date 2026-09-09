@@ -1,33 +1,51 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChatMessage } from "~/components/chat-components/chat-message";
 import { SignInModal } from "~/components/auth/sign-in-modal";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { Loader2, Send, Square } from "lucide-react";
-import { cn } from "~/lib/utils";
+import { cn } from "~/lib/utils/utils";
 import type { ChatUIMessage } from "~/lib/types/ai-types";
 
 interface ChatProps {
   userName: string;
   isAuthenticated: boolean;
+  chatId: string | undefined;
 }
 
-const messages = [
-  {
-    id: "1",
-    content: "Hello, how are you?",
-    role: "user",
-  },
-];
+export const ChatPage = ({ userName, isAuthenticated, chatId }: ChatProps) => {
+  const [createChatId, setCreateChatId] = useState<string | undefined>(
+    undefined,
+  );
 
-export const ChatPage = ({ userName, isAuthenticated }: ChatProps) => {
+  // ⭐️ 派生状态：优先使用服务端 prop，若无则使用本轮创建的 ID
+  const activeChatId = chatId ?? createChatId ?? undefined;
+
   const { messages, sendMessage, status, error, stop } = useChat<ChatUIMessage>(
     {
       transport: new DefaultChatTransport({
         api: "/api/chat",
+        body: {
+          chatId: activeChatId, // 每次请求将当前已知的 chatId 带给后端
+        },
       }),
+      // The onData callback is essential for handling streaming data, especially transient parts
+      // ⭐️ 监听服务端通过 transient: true 下发的数据流事件
+      onData: (dataPart) => {
+        // Handle all data parts as they arrive (including transient parts)
+        // console.log("Received data part:", dataPart);
+
+        // Handle different data part types
+        if (dataPart.type === "data-chat-created") {
+          // console.log("New chat created:", dataPart.data);
+          const newChatId = dataPart.data.chatId;
+          setCreateChatId(newChatId); // 立即更新 state，确保下一次发消息携带此 ID
+          // 使用 HTML5 replaceState 保证页面不重新挂载、SSE 连接不中断
+          window.history.replaceState(null, "", `/?chatId=${newChatId}`);
+        }
+      },
     },
   );
 

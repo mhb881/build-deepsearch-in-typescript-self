@@ -1,15 +1,16 @@
 import {
   convertToModelMessages,
+  createUIMessageStream,
   createUIMessageStreamResponse,
   isStepCount,
   streamText,
   toUIMessageStream,
-  type UIMessage,
 } from "ai";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { searchWeb } from "~/lib/ai-tools/searchWeb";
 import { model } from "~/lib/ai/model";
 import type { ChatUIMessage } from "~/lib/types/ai-types";
+import { extractChatTitle } from "~/lib/utils/ai-utils";
 import { auth } from "~/server/auth";
 import { db } from "~/server/db";
 import { upsertChat } from "~/server/db/chat";
@@ -67,29 +68,26 @@ export async function POST(req: Request) {
   //   await req.json();
   const body = (await req.json()) as {
     messages: ChatUIMessage[];
-    chadId?: string;
+    chatId?: string;
   };
-  const { messages, chadId } = body;
+  const { messages, chatId } = body;
 
   if (!messages || messages.length === 0) {
     return new Response("No messages provided", { status: 400 });
   }
 
   // ─── 4. 两阶段持久化之【阶段 1：前置防断流创建】 ───
-  let curChatId = chadId;
+  let curChatId = chatId;
+  let isNewChat = false;
 
   if (!curChatId) {
+    isNewChat = true;
     // 场景 A：客户端未传 chatId ──► 生成新 UUID 并立即在数据库建表存入用户提问
     const newChatId = crypto.randomUUID();
 
     // 自动从最后一条用户消息生成标题概要（截取前 50 字）
     const lastMessage = messages[messages.length - 1];
-    const firstTextPart = lastMessage?.parts.find((i) => i.type === "text");
-    const fallBackTitle =
-      (firstTextPart && "text" in firstTextPart
-        ? firstTextPart.text
-        : "新对话"
-      ).slice(0, 50) + "...";
+    const fallBackTitle = extractChatTitle(lastMessage);
 
     await upsertChat({
       userId: session.user.id,
@@ -115,67 +113,82 @@ export async function POST(req: Request) {
   // 5. 将 UI 层消息转换为模型层消息
   const modelMessages = await convertToModelMessages(messages);
 
-  // 6. 调用模型进行流式生成
-  const result = streamText({
-    model,
-    instructions: systemPrompt,
-    messages: modelMessages,
-    tools: {
-      searchWeb,
+  // ─── 6. ⭐️ AI SDK 7 现代标准：构建自定义 UI Message Stream ───
+  const stream = createUIMessageStream<ChatUIMessage>({
+    execute: async ({ writer }) => {
+      // 通知客户端 Assistant 消息帧开始
+      writer.write({ type: "start" });
+
+      // 若为新建会话，下发瞬态自定义数据事件（仅通知客户端 onData，不存入消息 parts 历史）
+      if (isNewChat) {
+        writer.write({
+          type: "data-chat-created",
+          data: { chatId: curChatId },
+          transient: true,
+        });
+      }
+
+      // 执行模型推理
+      const result = streamText({
+        model,
+        instructions: systemPrompt,
+        messages: modelMessages,
+        tools: {
+          searchWeb,
+        },
+        // v7 中 maxSteps → stopWhen: isStepCount(n)
+        stopWhen: isStepCount(10),
+        // v7：onFinish → onEnd
+        onEnd: ({ usage, responseMessages }) => {
+          // console.log("Generation ended:", text);
+          // console.log("Token usage:", usage);
+          // 在调用过程中生成的响应消息，即从 AI 传来的新消息
+          // console.log("Response messages:", responseMessages);
+        },
+      });
+
+      // 将模型推理事件流转换为 UI 消息流并合并
+      // sendStart: false 避免重复发送 start 帧
+      writer.merge(
+        // toUIMessageStream 负责“把模型 stream 转成 UI Message Stream”
+        toUIMessageStream({
+          stream: result.stream,
+          sendStart: false,
+        }),
+      );
     },
-    // ✅ 步骤 7：v7 中 maxSteps → stopWhen: isStepCount(n)
-    stopWhen: isStepCount(10),
-    // ✅ v7：onFinish → onEnd
-    onEnd: ({ usage, responseMessages }) => {
-      // console.log("Generation ended:", text);
-      console.log("Token usage:", usage);
-      // 在调用过程中生成的响应消息，即从 AI 传来的新消息
-      console.log("Response messages:", responseMessages);
+    originalMessages: messages, // ⭐️ 传入原始消息，自动开启聚合模式
+    onEnd: async ({ messages: updatedMessage, isAborted }) => {
+      /*
+       ⭐️ 两阶段持久化之【阶段 2：流结束自动聚合入库】
+
+      AI SDK 7 已经自动完成工具调用、工具结果与模型回答的因果树合并
+      我们不需要使用 v4 提供的 appendResponseMessages API 来手动合并消息
+      所以直接使用 upsertChat 来更新数据库中的消息列表
+       */
+
+      // 这里是已经合并后的消息列表，包含用户提问和模型回答，标题也是用最新的
+      const lastMessage = updatedMessage[updatedMessage.length - 1];
+      if (!lastMessage) return;
+      const fallBackTitle = extractChatTitle(lastMessage);
+
+      try {
+        // 保存完整聊天记录
+        await upsertChat({
+          userId: session.user.id,
+          chatId: curChatId,
+          title: fallBackTitle,
+          chatMessages: updatedMessage,
+        });
+      } catch (error) {
+        console.error("Failed to persist chat messages onEnd:", error);
+      }
     },
   });
 
   /**
    * 7. 将模型结果转换成 useChat 能直接消费的 UI Message Stream
-   * 两阶段持久化之【阶段 2：流结束自动聚合入库】
+   * createUIMessageStreamResponse 负责“把 UI Message Stream 包装成 HTTP Response”
    */
-  return createUIMessageStreamResponse({
-    // createUIMessageStreamResponse 负责“把 UI Message Stream 包装成 HTTP Response”
-    stream: toUIMessageStream({
-      // toUIMessageStream 负责“把模型 stream 转成 UI Message Stream”
-      stream: result.stream,
-      originalMessages: messages, // ⭐️ 传入原始消息，自动开启聚合模式
-      onEnd: async ({ messages: updatedMessage, isAborted }) => {
-        /*
-        AI SDK 7 已经自动完成工具调用、工具结果与模型回答的因果树合并
-        我们不需要使用 v4 提供的 appendResponseMessages API 来手动合并消息
-        所以直接使用 upsertChat 来更新数据库中的消息列表
-         */
-
-        // 这里是已经合并后的消息列表，包含用户提问和模型回答
-        const lastMessage = updatedMessage[updatedMessage.length - 1];
-        if (!lastMessage) {
-          return;
-        }
-        // 自动从最后一条用户消息生成标题概要（截取前 50 字）
-        const firstTextPart = lastMessage?.parts.find((i) => i.type === "text");
-        const fallBackTitle =
-          (firstTextPart && "text" in firstTextPart
-            ? firstTextPart.text
-            : "新对话"
-          ).slice(0, 50) + "...";
-
-        try {
-          // 保存完整聊天记录
-          await upsertChat({
-            userId: session.user.id,
-            chatId: curChatId,
-            title: fallBackTitle,
-            chatMessages: updatedMessage,
-          });
-        } catch (error) {
-          console.error("Failed to persist chat messages onEnd:", error);
-        }
-      },
-    }),
-  });
+  return createUIMessageStreamResponse({ stream });
 }

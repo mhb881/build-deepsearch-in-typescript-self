@@ -5,7 +5,7 @@
 构建时会直接提示拦截，避免服务端代码/数据库凭据被打包到前端。
  */
 import "server-only";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from ".";
 import { chats, messages } from "./schema";
 import type { ChatUIMessage } from "~/lib/types/ai-types";
@@ -82,7 +82,7 @@ export const upsertChat = async (opts: {
 
     // 3. 批量插入新消息
     if (chatMessages.length > 0) {
-      // 插入新消息
+      // 插入新消息（通过 onConflictDoUpdate 兜底防止主键冲突导致 500 崩溃）
       await tx.insert(messages).values(
         chatMessages.map((msg, index) => ({
           id: msg.id,
