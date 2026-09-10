@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useRef, useState } from "react";
 import { ChatMessage } from "~/components/chat-components/chat-message";
 import { SignInModal } from "~/components/auth/sign-in-modal";
 import { useChat } from "@ai-sdk/react";
@@ -8,23 +8,32 @@ import { DefaultChatTransport } from "ai";
 import { Loader2, Send, Square } from "lucide-react";
 import { cn } from "~/lib/utils/utils";
 import type { ChatUIMessage } from "~/lib/types/ai-types";
+import { useRouter } from "next/navigation";
 
 interface ChatProps {
   userName: string;
   isAuthenticated: boolean;
   chatId: string | undefined;
+  initialMessages?: ChatUIMessage[];
 }
 
-export const ChatPage = ({ userName, isAuthenticated, chatId }: ChatProps) => {
+export const ChatPage = ({
+  userName,
+  isAuthenticated,
+  chatId,
+  initialMessages = [],
+}: ChatProps) => {
+  const router = useRouter();
   const [createChatId, setCreateChatId] = useState<string | undefined>(
     undefined,
   );
-
+  const createChatIdRef = useRef<string | undefined>(undefined);
   // ⭐️ 派生状态：优先使用服务端 prop，若无则使用本轮创建的 ID
   const activeChatId = chatId ?? createChatId ?? undefined;
 
   const { messages, sendMessage, status, error, stop } = useChat<ChatUIMessage>(
     {
+      messages: initialMessages,
       transport: new DefaultChatTransport({
         api: "/api/chat",
         body: {
@@ -36,15 +45,35 @@ export const ChatPage = ({ userName, isAuthenticated, chatId }: ChatProps) => {
       onData: (dataPart) => {
         // Handle all data parts as they arrive (including transient parts)
         // console.log("Received data part:", dataPart);
-
         // Handle different data part types
         if (dataPart.type === "data-chat-created") {
-          // console.log("New chat created:", dataPart.data);
           const newChatId = dataPart.data.chatId;
           setCreateChatId(newChatId); // 立即更新 state，确保下一次发消息携带此 ID
-          // 使用 HTML5 replaceState 保证页面不重新挂载、SSE 连接不中断
+          createChatIdRef.current = newChatId; // 同时更新 ref，确保下一次发消息携带此 ID
+          // replaceState 保证页面不重新挂载、SSE 连接不中断
           window.history.replaceState(null, "", `/?chatId=${newChatId}`);
         }
+      },
+      // ⭐️ 核心补充：当 AI 生成彻底结束时触发
+      onFinish: () => {
+        // 如果本轮是新建会话，此时流已结束，安全地让 Next.js Router 正式切换
+        const newChatId = createChatIdRef.current;
+        if (newChatId) {
+          router.replace(`/?chatId=${newChatId}`, {
+            scroll: false,
+          });
+        }
+      },
+      onError: (error) => {
+        console.error("AI stream error:", error);
+        // 1. 关键：清空 ref！防止残留 chatId 污染下一次对话
+        createChatIdRef.current = undefined;
+
+        // 2. 可选：给用户弹窗/提示，展示错误信息
+        // toast.error(`生成失败：${err.message}`);
+
+        // 3. 可选：如果你在客户端维护消息列表，可以追加一条系统错误消息
+        // setMessages(prev => [...prev, { role: 'system', content: 'AI 生成失败，请重试。' }]);
       },
     },
   );
