@@ -8,6 +8,7 @@ import type { MyTools } from "../ai-tools/tools";
 export type ChatUIDataTypes = {
   "chat-created": {
     chatId: string;
+    title: string;
   };
 };
 

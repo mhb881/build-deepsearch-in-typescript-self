@@ -80,14 +80,14 @@ export async function POST(req: Request) {
   let curChatId = chatId;
   let isNewChat = false;
 
+  // 自动从最后一条用户消息生成标题概要（截取前 50 字）
+  const lastMessage = messages[messages.length - 1];
+  const fallBackTitle = extractChatTitle(lastMessage);
+
   if (!curChatId) {
     isNewChat = true;
     // 场景 A：客户端未传 chatId ──► 生成新 UUID 并立即在数据库建表存入用户提问
     const newChatId = crypto.randomUUID();
-
-    // 自动从最后一条用户消息生成标题概要（截取前 50 字）
-    const lastMessage = messages[messages.length - 1];
-    const fallBackTitle = extractChatTitle(lastMessage);
 
     await upsertChat({
       userId: session.user.id,
@@ -115,6 +115,7 @@ export async function POST(req: Request) {
 
   // ─── 6. ⭐️ AI SDK 7 现代标准：构建自定义 UI Message Stream ───
   const stream = createUIMessageStream<ChatUIMessage>({
+    originalMessages: messages, // ⭐️ 传入原始消息，自动开启聚合模式
     execute: async ({ writer }) => {
       // 通知客户端 Assistant 消息帧开始
       writer.write({ type: "start" });
@@ -123,7 +124,7 @@ export async function POST(req: Request) {
       if (isNewChat) {
         writer.write({
           type: "data-chat-created",
-          data: { chatId: curChatId },
+          data: { chatId: curChatId, title: fallBackTitle },
           transient: true,
         });
       }
@@ -157,7 +158,6 @@ export async function POST(req: Request) {
         }),
       );
     },
-    originalMessages: messages, // ⭐️ 传入原始消息，自动开启聚合模式
     onEnd: async ({ messages: updatedMessage, isAborted }) => {
       /*
        ⭐️ 两阶段持久化之【阶段 2：流结束自动聚合入库】

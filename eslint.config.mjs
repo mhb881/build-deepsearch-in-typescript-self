@@ -1,17 +1,18 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
-import tseslint from "typescript-eslint";
-
+/**
+ * 官方推荐使用 projectService: true 代替过时的 project: ["./tsconfig.json"]。
+ * 它会使用与 VS Code TypeScript 相同的 Project Service 引擎，大幅减少冷启动开销并共享缓存。
+ */
 const eslintConfig = defineConfig([
   ...nextVitals,
-  ...nextTs,
-  ...tseslint.configs.recommended,
+  ...nextTs, // 已内置 typescript-eslint/recommended，无需重复导入
   {
     files: ["src/**/*.{ts,tsx}"],
     languageOptions: {
       parserOptions: {
-        project: ["./tsconfig.json"],
+        projectService: true, // 启用 Project Service，比 project: [...] 显著提升 IDE 性能
         tsconfigRootDir: import.meta.dirname,
       },
     },
