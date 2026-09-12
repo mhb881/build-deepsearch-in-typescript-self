@@ -1,3 +1,4 @@
+// src/components/chat-components/chat.tsx
 "use client";
 
 import { useRef, useState } from "react";
@@ -9,15 +10,13 @@ import { Loader2, Send, Square } from "lucide-react";
 import { cn } from "~/lib/utils/utils";
 import type { ChatUIMessage } from "~/lib/types/ai-types";
 import { useRouter } from "next/navigation";
-import type { SimpleChat } from "~/lib/types/types";
+import { useChatContext } from "~/components/chat-components/context/chat-context";
 
 interface ChatProps {
   userName: string;
   isAuthenticated: boolean;
   chatId: string | undefined;
   initialMessages?: ChatUIMessage[];
-  // ⭐️ 1. 定义回调属性
-  onChatCreated: (chat: SimpleChat) => void;
 }
 
 export const ChatPage = ({
@@ -25,9 +24,9 @@ export const ChatPage = ({
   isAuthenticated,
   chatId,
   initialMessages = [],
-  onChatCreated, // ⭐️ 接收回调属性
 }: ChatProps) => {
   const router = useRouter();
+  const { handleCreatedChat: onChatCreated } = useChatContext(); // ⭐️ 直接取 context 方法
   const [createdChatId, setCreatedChatId] = useState<string | undefined>(
     undefined,
   );
@@ -53,12 +52,16 @@ export const ChatPage = ({
         if (dataPart.type === "data-chat-created") {
           const newChatId = dataPart.data.chatId;
           const title = dataPart.data.title ?? "新对话";
-          setCreatedChatId(newChatId); // 立即更新 state，确保下一次发消息携带此 ID
-          createdChatIdRef.current = newChatId; // 同时更新 ref，确保下一次发消息携带此 ID
-          // replaceState 保证页面不重新挂载、SSE 连接不中断
-          window.history.replaceState(null, "", `/?chatId=${newChatId}`);
 
-          // ⭐️ 2. 核心：通过 callback 直接通知父组件更新 Sidebar！
+          setCreatedChatId(newChatId); // 立即更新 state，确保下一次发消息携带此 ID
+
+          createdChatIdRef.current = newChatId; // 同时更新 ref，确保下一次发消息携带此 ID
+
+          // replaceState 保证页面不重新挂载、SSE 连接不中断
+          // ⭐️ URL 优雅升级：变成 /${newChatId}
+          window.history.replaceState(null, "", `/${newChatId}`);
+
+          // 通过 callback 直接通知父组件更新 Sidebar，其实是通知 Context
           // 纯内存操作，不触发服务端刷新，0ms 响应，绝不打断流！
           onChatCreated({
             id: newChatId,
@@ -71,10 +74,12 @@ export const ChatPage = ({
         // 如果本轮是新建会话，此时流已结束，安全地让 Next.js Router 正式切换
         const newChatId = createdChatIdRef.current;
         if (newChatId) {
-          router.replace(`/?chatId=${newChatId}`, {
+          // 重构：流结束后，正式将 Next.js 路由同步为 /${newChatId}
+          router.replace(`/${newChatId}`, {
             scroll: false,
           });
         }
+        router.refresh();
       },
       onError: (error) => {
         console.error("AI stream error:", error);

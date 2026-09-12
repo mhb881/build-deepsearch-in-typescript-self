@@ -1,22 +1,23 @@
+// src/components/chat-components/chat-sidebar.tsx
+"use client";
+
 import { PlusIcon } from "lucide-react";
 import Link from "next/link";
-import { AuthButton } from "./auth/auth-button";
+import { AuthButton } from "../auth/auth-button";
 import { cn } from "~/lib/utils/utils";
-import type { SimpleChat } from "~/lib/types/types";
+import { usePathname } from "next/navigation";
+import { useChatContext } from "./context/chat-context";
 
 interface SidebarProps {
-  chats: SimpleChat[];
-  activeId: string | undefined;
   isAuthenticated: boolean;
   userImage?: string | null;
 }
 
-export function Sidebar({
-  chats,
-  activeId,
-  isAuthenticated,
-  userImage,
-}: SidebarProps) {
+export function Sidebar({ isAuthenticated, userImage }: SidebarProps) {
+  const pathname = usePathname(); // ⭐️ 当前浏览器路径，例如 "/abc-123"
+  const activeId = pathname.replace("/", ""); // ⭐️ 从路径中提取 chatId
+  const { chats } = useChatContext(); // ⭐️ 从 context 直接拿派生好的 chats
+
   return (
     <div className="flex w-64 flex-col border-r border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
       <div className="p-4">
@@ -41,7 +42,7 @@ export function Sidebar({
           chats.map((chat) => (
             <div key={chat.id} className="flex items-center gap-2">
               <Link
-                href={`/?chatId=${chat.id}`}
+                href={`/${chat.id}`} // ⭐️ 链接进化：直观的动态路径
                 className={cn(
                   "min-w-0 flex-1 truncate rounded-lg p-3 text-left text-sm text-gray-700 focus:ring-2 focus:ring-blue-400 focus:outline-none dark:text-gray-300",
                   chat.id === activeId
