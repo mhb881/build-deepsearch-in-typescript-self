@@ -42,6 +42,7 @@
     "simple-icons": "^16.28.0",
     "tailwind-merge": "^3.6.0",
     "undici": "^8.10.0",
+    "use-stick-to-bottom": "^1.1.6",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -67,5 +68,5 @@
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.1.11"
   },
-  "packageManager": "pnpm@12.0.0"
+  "packageManager": "pnpm@12.4.1"
 }

@@ -11,6 +11,7 @@ import { cn } from "~/lib/utils/utils";
 import type { ChatUIMessage } from "~/lib/types/ai-types";
 import { useRouter } from "next/navigation";
 import { useChatContext } from "~/components/chat-components/context/chat-context";
+import { StickToBottom } from "use-stick-to-bottom";
 
 interface ChatProps {
   userName: string;
@@ -120,50 +121,68 @@ export const ChatPage = ({
 
   return (
     <>
-      <div className="flex flex-1 flex-col">
-        {/* 消息区域 */}
-        <div
-          className="mx-auto w-full max-w-[65ch] flex-1 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 overflow-y-auto p-4 hover:scrollbar-thumb-gray-400 dark:scrollbar-thumb-gray-600 dark:scrollbar-track-gray-800 dark:hover:scrollbar-thumb-gray-500"
-          role="log"
-          aria-label="Chat messages"
+      <div className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden">
+        {/* 消息滚动区域：撑满全宽，滚动条紧贴屏幕最右侧 */}
+        <StickToBottom
+          className={cn(
+            // 基础布局与自适应高度约束
+            "flex min-h-0 w-full flex-1 flex-col overflow-auto",
+            // 核心样式穿透：利用 [&>div]: 选择器给库内部生成的真实滚动节点添加自定义细窄滚动条
+            "[&>div]:scrollbar-thin [&>div]:scrollbar-thumb-gray-300 [&>div]:scrollbar-track-gray-100 hover:[&>div]:scrollbar-thumb-gray-400",
+            "dark:[&>div]:scrollbar-thumb-gray-600 dark:[&>div]:scrollbar-track-gray-800 dark:hover:[&>div]:scrollbar-thumb-gray-500",
+          )}
+          resize="smooth" // 高度膨胀时平滑跟随
+          initial="instant" // 首屏挂载时平滑贴底
         >
-          {messages.length === 0 && (
-            <div className="mt-[50%] text-center text-gray-500 dark:text-gray-400">
-              发送消息开始对话...
-            </div>
-          )}
-          {messages.map((message) => {
-            return (
-              <ChatMessage
-                key={message.id}
-                message={message}
-                userName={userName}
-              />
-            );
-          })}
+          {/* 内容容器：承载真正的消息 DOM */}
+          <StickToBottom.Content
+            className="flex min-h-full flex-col"
+            role="log"
+            aria-label="Chat messages"
+          >
+            {messages.length === 0 ? (
+              /* ⭐️ 空状态：真正的垂直水平绝对居中 */
+              <div className="flex h-full flex-1 items-center justify-center p-4">
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  发送消息开始对话...
+                </p>
+              </div>
+            ) : (
+              /* ⭐️ 内容限宽居中区域：排版优雅规范 */
+              <div className="mx-auto w-full max-w-[65ch] space-y-4 p-4">
+                {messages.map((message) => (
+                  <ChatMessage
+                    key={message.id}
+                    message={message}
+                    userName={userName}
+                  />
+                ))}
 
-          {status === "submitted" && (
-            <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              AI 正在准备响应...
-            </div>
-          )}
+                {status === "submitted" && (
+                  <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    AI 正在准备响应...
+                  </div>
+                )}
 
-          {status === "streaming" && (
-            <div className="text-sm text-gray-500 dark:text-gray-400">
-              AI 正在生成...
-            </div>
-          )}
+                {status === "streaming" && (
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    AI 正在生成...
+                  </div>
+                )}
 
-          {error && (
-            <div className="text-sm text-red-600 dark:text-red-500">
-              请求失败：{error.message}
-            </div>
-          )}
-        </div>
+                {error && (
+                  <div className="text-sm text-red-600 dark:text-red-500">
+                    请求失败：{error.message}
+                  </div>
+                )}
+              </div>
+            )}
+          </StickToBottom.Content>
+        </StickToBottom>
 
-        {/* 输入区域 */}
-        <div className="border-t border-gray-200 dark:border-gray-700">
+        {/* 输入区域：固定在最底部不被压缩 */}
+        <div className="shrink-0 border-t border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-950">
           <form
             onSubmit={handleFormSubmit}
             className="mx-auto max-w-[65ch] p-4"
@@ -176,14 +195,34 @@ export const ChatPage = ({
                 disabled={isLoading}
                 autoFocus
                 aria-label="Chat input"
-                className="flex-1 rounded border border-gray-300 bg-white p-2 text-gray-800 placeholder-gray-400 focus:border-gray-500 focus:ring-2 focus:ring-blue-400 focus:outline-none disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:placeholder-gray-400"
+                className={cn(
+                  // 尺寸与排版
+                  "flex-1 rounded p-2",
+                  // 浅色 / 深色背景与边框
+                  "border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-800",
+                  // 文本与占位符
+                  "text-gray-800 placeholder-gray-400 dark:text-gray-200 dark:placeholder-gray-400",
+                  // 焦点与可用态反馈
+                  "focus:border-gray-500 focus:ring-2 focus:ring-blue-400 focus:outline-none",
+                  // 禁用态
+                  "disabled:opacity-50",
+                )}
               />
 
               {isLoading ? (
                 <button
                   type="button"
                   onClick={stop}
-                  className="cursor-pointer rounded-lg bg-gray-800 p-3 text-white hover:bg-gray-700 focus:border-gray-500 focus:ring-2 focus:ring-blue-400 focus:outline-none disabled:opacity-50 disabled:hover:bg-gray-700 dark:bg-gray-600 dark:hover:bg-gray-700"
+                  className={cn(
+                    // 尺寸与排版
+                    "cursor-pointer rounded-lg p-3 text-white",
+                    // 基础配色与 Hover
+                    "bg-gray-800 hover:bg-gray-700 dark:bg-gray-600 dark:hover:bg-gray-700",
+                    // 焦点状态
+                    "focus:border-gray-500 focus:ring-2 focus:ring-blue-400 focus:outline-none",
+                    // 禁用状态
+                    "disabled:opacity-50 disabled:hover:bg-gray-700 dark:disabled:hover:bg-gray-600",
+                  )}
                 >
                   <Square className="size-4" />
                 </button>
@@ -192,25 +231,19 @@ export const ChatPage = ({
                   type="submit"
                   disabled={!input.trim()}
                   className={cn(
-                    "bg-gray-800 dark:bg-gray-600",
-                    "cursor-pointer rounded-lg p-3 text-white hover:bg-gray-700 focus:border-gray-500 focus:ring-2 focus:ring-blue-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-gray-700 dark:disabled:hover:bg-gray-600",
+                    // 尺寸与排版
+                    "cursor-pointer rounded-lg p-3 text-white",
+                    // 基础配色与 Hover
+                    "bg-gray-800 hover:bg-gray-700 dark:bg-gray-600 dark:hover:bg-gray-700",
+                    // 焦点状态
+                    "focus:border-gray-500 focus:ring-2 focus:ring-blue-400 focus:outline-none",
+                    // 禁用状态（含禁用光标）
+                    "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-gray-700 dark:disabled:hover:bg-gray-600",
                   )}
                 >
-                  {isLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="h-5 w-5" />
-                  )}
+                  <Send className="h-5 w-5" />
                 </button>
               )}
-              {/* <button
-                type="submit"
-                // onClick={isLoading ? stop : handleFormSubmit}
-                disabled={false}
-                className="rounded bg-gray-700 px-4 py-2 text-white hover:bg-gray-600 focus:border-gray-500 focus:ring-2 focus:ring-blue-400 focus:outline-none disabled:opacity-50 disabled:hover:bg-gray-700"
-              >
-                {isLoading ? <Square className="size-4" /> : "Send"}
-              </button> */}
             </div>
           </form>
         </div>
