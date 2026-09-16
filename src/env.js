@@ -30,6 +30,11 @@ export const env = createEnv({
     GOOGLE_GENERATIVE_AI_API_KEY: z.string(),
     // SiliconFlow API Key
     SILICONFLOW_API_KEY: z.string(),
+
+    // Langfuse API Key
+    LANGFUSE_SECRET_KEY: z.string(),
+    LANGFUSE_PUBLIC_KEY: z.string(),
+    LANGFUSE_BASE_URL: z.string(),
   },
 
   /**
@@ -57,6 +62,10 @@ export const env = createEnv({
     // Discord Auth
     AUTH_DISCORD_ID: process.env.AUTH_DISCORD_ID,
     AUTH_DISCORD_SECRET: process.env.AUTH_DISCORD_SECRET,
+    // Langfuse API Key
+    LANGFUSE_SECRET_KEY: process.env.LANGFUSE_SECRET_KEY,
+    LANGFUSE_PUBLIC_KEY: process.env.LANGFUSE_PUBLIC_KEY,
+    LANGFUSE_BASE_URL: process.env.LANGFUSE_BASE_URL,
   },
   /**
    * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially
