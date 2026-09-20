@@ -75,12 +75,13 @@ export const ChatPage = ({
         // 如果本轮是新建会话，此时流已结束，安全地让 Next.js Router 正式切换
         const newChatId = createdChatIdRef.current;
         if (newChatId) {
-          // 重构：流结束后，正式将 Next.js 路由同步为 /${newChatId}
+          // 流结束后，正式将 Next.js 路由同步为 /${newChatId}
+          // 会卸载旧页面组件，挂载新页面，不会保留旧页面的 state
           router.replace(`/${newChatId}`, {
             scroll: false,
           });
         }
-        router.refresh();
+        router.refresh(); // 向服务器发起请求，重新获取数据、重新渲染服务端组件 RSC
       },
       onError: (error) => {
         console.error("AI stream error:", error);

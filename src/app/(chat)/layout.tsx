@@ -29,7 +29,7 @@ async function ChatLayout({ children }: { children: ReactNode }) {
           userImage={session?.user?.image}
         />
         {/* 右侧动态页面内容 */}
-        <main className="flex min-w-0 flex-1 flex-col h-full overflow-hidden">
+        <main className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
           {children}
         </main>
       </div>

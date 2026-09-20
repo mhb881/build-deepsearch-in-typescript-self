@@ -16,6 +16,7 @@ Better Auth
     ↓
 Discord
  */
+import { env } from "./env";
 import { runProxy } from "./lib/proxy";
 
 export async function register() {
@@ -35,7 +36,11 @@ export async function register() {
     // 3. 注册 OpenTelemetry 并挂载 LangfuseSpanProcessor
     registerOTel({
       serviceName: "deepsearch-course",
-      spanProcessors: [new LangfuseSpanProcessor()],
+      spanProcessors: [
+        new LangfuseSpanProcessor({
+          environment: env.NODE_ENV, // ⭐️ 全局绑定当前部署环境（development / production）
+        }),
+      ],
     });
 
     // 纯手动
@@ -47,5 +52,9 @@ export async function register() {
 
     // 4. 将 Langfuse 遥测集成器挂载到 AI SDK 7 全局生命周期中
     registerTelemetry(new LangfuseVercelAiSdkIntegration());
+
+    console.log(
+      `[Instrumentation] Langfuse 遥测管道就绪 (Environment: ${env.NODE_ENV}) 🚀`,
+    );
   }
 }
