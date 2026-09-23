@@ -1,5 +1,4 @@
 import { isToolUIPart } from "ai";
-import { Markdown } from "./chat-markdown";
 import type { ChatUIMessage, ChatUIPart } from "~/lib/types/ai-types";
 import TextPart from "./text-part";
 import ToolPart from "./tool-part";

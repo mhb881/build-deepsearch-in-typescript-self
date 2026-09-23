@@ -1,55 +1,60 @@
-import {
-  Loader2,
-  CheckCircle2,
-  XCircle,
-  Ban,
-  PauseCircle,
-  Search,
-  ExternalLink,
-} from "lucide-react";
+"use client";
+
+import { Loader2, CheckCircle2, XCircle, Ban, PauseCircle } from "lucide-react";
 import { getToolName, type DynamicToolUIPart, type ToolUIPart } from "ai";
 import type { MyTools } from "~/lib/ai-tools/tools";
+import { getToolMeta, ToolOutputDisplay } from "./tools";
 
 type AnyToolPart = ToolUIPart<MyTools> | DynamicToolUIPart;
 
+/**
+ * ToolPart: AI 工具调用生命周期壳层组件
+ * 职责：专职处理 Vercel AI SDK 的状态机变化（流式输入、准备执行、等待审批、报错、完成），
+ * 并将具体的工具展示分发至 tools/ 子系统。
+ */
 function ToolPart({ part }: { part: AnyToolPart }) {
   const toolName = getToolName(part);
+  const { label, icon: ToolIcon } = getToolMeta(toolName);
 
   switch (part.state) {
     case "input-streaming":
       return (
-        <div className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:bg-amber-950 dark:text-amber-300">
-          <Loader2 className="h-4 w-4 animate-spin" />
+        <div className="my-2 flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
+          <Loader2 className="h-4 w-4 animate-spin text-amber-600 dark:text-amber-400" />
           <span>正在分析需要调用什么工具…</span>
         </div>
       );
 
     case "input-available":
       return (
-        <div className="flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          <span>
-            准备调用 <span className="font-medium">{toolName}</span>
-          </span>
+        <div className="my-2 flex items-center justify-between rounded-lg border border-blue-200/70 bg-blue-50/60 px-3 py-2 text-sm text-blue-700 dark:border-blue-900/50 dark:bg-blue-950/40 dark:text-blue-300">
+          <div className="flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin text-blue-600 dark:text-blue-400" />
+            <span>
+              正在调用 <span className="font-semibold">{label}</span>
+              <span className="ml-1 text-xs opacity-75">({toolName})</span>
+            </span>
+          </div>
+          <ToolIcon className="h-4 w-4 opacity-60" />
         </div>
       );
 
     case "approval-requested":
       return (
-        <div className="flex items-center gap-2 rounded-lg bg-orange-50 px-3 py-2 text-sm text-orange-700 dark:bg-orange-950 dark:text-orange-300">
-          <PauseCircle className="h-4 w-4" />
+        <div className="my-2 flex items-center gap-2 rounded-lg bg-orange-50 px-3 py-2 text-sm text-orange-700 dark:bg-orange-950/60 dark:text-orange-300">
+          <PauseCircle className="h-4 w-4 text-orange-600 dark:text-orange-400" />
           <span>
-            <span className="font-medium">{toolName}</span> 等待用户批准
+            <span className="font-medium">{label}</span> 等待用户批准
           </span>
         </div>
       );
 
     case "approval-responded":
       return (
-        <div className="flex items-center gap-2 rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-600 dark:bg-gray-800 dark:text-gray-400">
-          <CheckCircle2 className="h-4 w-4" />
+        <div className="my-2 flex items-center gap-2 rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+          <CheckCircle2 className="h-4 w-4 text-gray-500" />
           <span>
-            <span className="font-medium">{toolName}</span> 已响应批准
+            <span className="font-medium">{label}</span> 已响应批准
           </span>
         </div>
       );
@@ -57,10 +62,19 @@ function ToolPart({ part }: { part: AnyToolPart }) {
     case "output-available": {
       const output = part.output;
       return (
-        <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-300">
-          <div className="mb-2 flex items-center gap-2 font-medium">
-            <CheckCircle2 className="h-4 w-4" />
-            <span>{toolName} 执行完成</span>
+        <div className="my-2 rounded-xl border border-gray-200 bg-gray-50/90 p-3 text-sm transition-all dark:border-gray-800 dark:bg-gray-900/60">
+          <div className="mb-2.5 flex items-center justify-between border-b border-gray-200/60 pb-2 dark:border-gray-800/60">
+            <div className="flex items-center gap-2 font-medium text-gray-900 dark:text-gray-100">
+              <ToolIcon className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+              <span>{label}</span>
+              <span className="text-xs text-gray-400 dark:text-gray-500">
+                ({toolName})
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              <span>执行完成</span>
+            </div>
           </div>
           <ToolOutputDisplay toolName={toolName} output={output} />
         </div>
@@ -70,11 +84,10 @@ function ToolPart({ part }: { part: AnyToolPart }) {
     case "output-error": {
       const errorText = part.errorText;
       return (
-        <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
-          <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
+        <div className="my-2 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50/80 p-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
+          <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
           <span>
-            <span className="font-medium">{toolName}</span> 执行失败：
-            {errorText}
+            <span className="font-medium">{label}</span> 执行失败：{errorText}
           </span>
         </div>
       );
@@ -82,10 +95,10 @@ function ToolPart({ part }: { part: AnyToolPart }) {
 
     case "output-denied":
       return (
-        <div className="flex items-center gap-2 rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+        <div className="my-2 flex items-center gap-2 rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-500 dark:bg-gray-800 dark:text-gray-400">
           <Ban className="h-4 w-4" />
           <span>
-            <span className="font-medium">{toolName}</span> 已被拒绝执行
+            <span className="font-medium">{label}</span> 已被拒绝执行
           </span>
         </div>
       );
@@ -96,56 +109,3 @@ function ToolPart({ part }: { part: AnyToolPart }) {
 }
 
 export default ToolPart;
-
-function ToolOutputDisplay({
-  toolName,
-  output,
-}: {
-  toolName: string;
-  output: unknown;
-}) {
-  if (toolName === "searchWeb" && Array.isArray(output)) {
-    return (
-      <div className="space-y-2">
-        <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-          <Search className="h-3 w-3" />
-          <span>搜索到 {output.length} 条结果</span>
-        </div>
-        <div className="space-y-2">
-          {output
-            .slice(0, 3)
-            .map(
-              (
-                item: { link: string; title: string; snippet: string },
-                i: number,
-              ) => (
-                <div
-                  key={i}
-                  className="rounded-lg border border-gray-200 bg-white p-2.5 dark:border-gray-700 dark:bg-gray-900"
-                >
-                  <a
-                    href={item.link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
-                  >
-                    {item.title}
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                  <p className="mt-1 text-xs leading-relaxed text-gray-600 dark:text-gray-400">
-                    {item.snippet}
-                  </p>
-                </div>
-              ),
-            )}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <pre className="overflow-x-auto rounded-lg bg-gray-100 p-3 text-xs dark:bg-gray-800">
-      {JSON.stringify(output, null, 2)}
-    </pre>
-  );
-}

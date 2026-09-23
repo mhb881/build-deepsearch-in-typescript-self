@@ -5,7 +5,7 @@ import { tool } from "ai";
 // z: Zod 校验库，用于定义输入参数的运行时 schema（同时为 AI 模型提供参数说明）
 import { z } from "zod";
 // searchSerper: 封装了 Serper API（Google 搜索服务）的请求函数，支持 Redis 缓存和请求取消
-import { searchSerper } from "~/serper";
+import { searchSerper } from "~/server/serper";
 
 // 声明一个名为 searchWeb 的 AI 工具，AI 模型可根据 description 决定是否调用此工具
 export const searchWeb = tool({
@@ -22,6 +22,7 @@ export const searchWeb = tool({
   execute: async ({ query }, { abortSignal }) => {
     // 调用 Serper API 发起 Google 搜索，请求最多 10 条自然搜索结果
     // abortSignal 传入以支持请求取消（如用户取消搜索时中断 fetch）
+    console.log(abortSignal);
     const results = await searchSerper({ q: query, num: 10 }, abortSignal);
     // 从响应的 organic（自然搜索结果数组）中提取精简信息
     // 使用 ?? [] 做空值兜底，防止 organic 为 undefined 时报错

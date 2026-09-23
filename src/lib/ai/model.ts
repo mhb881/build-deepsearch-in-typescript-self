@@ -1,7 +1,7 @@
 import { google } from "@ai-sdk/google";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 
-const googleModel = google("gemini-3.5-flash-lite");
+const googleModel = google("gemini-3.1-flash-lite-preview");
 /*
 使用 SiliconFlow 模型生成文本示例：
 model: siliconflow.chatModel(
