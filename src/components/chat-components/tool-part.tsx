@@ -76,6 +76,8 @@ function ToolPart({ part }: { part: AnyToolPart }) {
               <span>执行完成</span>
             </div>
           </div>
+
+          {/* 展示工具输出，根据 toolName 分发至 tools/ 子系统 */}
           <ToolOutputDisplay toolName={toolName} output={output} />
         </div>
       );

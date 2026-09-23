@@ -32,6 +32,7 @@ export const searchWeb = tool({
       title: result.title,
       link: result.link,
       snippet: result.snippet,
+      date: result.date ?? null, // 补齐 date 字段，让大模型能判断网页的发布时间与新旧程度
     }));
   },
 });

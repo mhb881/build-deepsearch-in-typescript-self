@@ -22,8 +22,12 @@ import { scrapePages } from "~/lib/ai-tools/scrapePages";
 
 const MAX_REQUESTS_PER_DAY = 10;
 // 系统提示词
-const systemPrompt = `You are DeepSearch, an autonomous and rigorous AI research engine.
+const getSystemPrompt = (
+  currentDate: string,
+) => `You are DeepSearch, an autonomous and rigorous AI research engine.
 Your mission is to evaluate incoming queries, leverage established internal knowledge when sufficient, and execute deep, authoritative web research when external verification is required.
+The current date and time is ${currentDate}.
+When users ask for up-to-date or recent information, use the current date to provide accurate context about how recent the information is.
 
 ## Available Research Tools
 - 'searchWeb({ query: string })': Broad reconnaissance — retrieves candidate URLs, domains, and high-level snippet previews.
@@ -197,6 +201,10 @@ export async function POST(req: Request) {
             });
           }
 
+          // ⭐️ 关键点：在每次处理请求时，动态获取当下的系统时间字符串
+          const currentDate = new Date().toLocaleString();
+          const systemPrompt = getSystemPrompt(currentDate);
+
           // 执行模型推理
           const result = streamText({
             model,
@@ -234,11 +242,11 @@ export async function POST(req: Request) {
         },
         onEnd: async ({ messages: updatedMessage, isAborted }) => {
           /*
-       ⭐️ 两阶段持久化之【阶段 2：流结束自动聚合入库】
-      AI SDK 7 已经自动完成工具调用、工具结果与模型回答的因果树合并
-      我们不需要使用 v4 提供的 appendResponseMessages API 来手动合并消息
-      所以直接使用 upsertChat 来更新数据库中的消息列表
-       */
+          ⭐️ 两阶段持久化之【阶段 2：流结束自动聚合入库】
+          AI SDK 7 已经自动完成工具调用、工具结果与模型回答的因果树合并
+          我们不需要使用 v4 提供的 appendResponseMessages API 来手动合并消息
+          所以直接使用 upsertChat 来更新数据库中的消息列表
+           */
 
           // 这里是已经合并后的消息列表，包含用户提问和模型回答，标题也是用最新的
           const lastMessage = updatedMessage[updatedMessage.length - 1];
