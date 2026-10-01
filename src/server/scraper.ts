@@ -55,6 +55,28 @@ const turndownService = new TurndownService({
   emDelimiter: "*",
 });
 
+// SSRF 安全校验：禁止访问内网保留地址与本地回环
+function isSafeUrl(urlString: string): boolean {
+  try {
+    const url = new URL(urlString);
+    if (!["http:", "https:"].includes(url.protocol)) return false;
+    const host = url.hostname.toLowerCase();
+    if (
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host === "0.0.0.0" ||
+      host.startsWith("192.168.") ||
+      host.startsWith("10.") ||
+      host.endsWith(".local")
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // 2. 清洗 HTML 并提取核心正文
 const extractArticleText = (html: string) => {
   const $ = cheerio.load(html); // 返回一个函数
@@ -123,6 +145,13 @@ export const crawlWebsite = cacheWithRedis(
   async (options: CrawlOptions & { url: string }): Promise<CrawlResponse> => {
     const { url, maxRetries = DEFAULT_MAX_RETRIES } = options;
 
+    // 校验 URL 是否安全
+    if (!isSafeUrl(url)) {
+      throw new Error(
+        `Security Exception: URL '${url}' points to an invalid or private network address.`,
+      );
+    }
+
     // 先核对 robots.txt 抓取权限
     const isAllowed = await checkRobotsTxt(url);
     if (!isAllowed) {
@@ -135,8 +164,14 @@ export const crawlWebsite = cacheWithRedis(
     // 指数退避重试
     let attempts = 0;
     while (attempts < maxRetries) {
+      // 10秒超时熔断
+      const controller = new AbortController();
+      // 这里是 Node.js 的 setTimeout，返回 Promise Promise<unknown>
+      const promise = setTimeout(10000, controller.abort());
+
       try {
         const response = await fetch(url, {
+          signal: controller.signal,
           headers: {
             "User-agent":
               "Mozilla/5.0 (compatible; DeepSearchBot/1.0; +https://example.com/bot)",
@@ -184,6 +219,9 @@ export const crawlWebsite = cacheWithRedis(
           MAX_DELAY_MS,
         );
         await setTimeout(delay);
+      } finally {
+        // 清理定时器
+        controller.abort(); // Promise 直接 reject，抛出 AbortError
       }
     }
 

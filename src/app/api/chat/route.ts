@@ -6,21 +6,30 @@ import {
   streamText,
   toUIMessageStream,
 } from "ai";
+import { after } from "next/server";
+import {
+  observe,
+  propagateAttributes,
+  updateActiveObservation,
+} from "@langfuse/tracing";
+import { context as otelContext, trace as otelTrace } from "@opentelemetry/api";
 import { eq } from "drizzle-orm";
+
 import { searchWeb } from "~/lib/ai-tools/searchWeb";
+import { scrapePages } from "~/lib/ai-tools/scrapePages";
 import { model } from "~/lib/ai/model";
 import type { ChatUIMessage } from "~/lib/types/ai-types";
 import { extractChatTitle } from "~/lib/utils/ai-utils";
+
 import { auth } from "~/server/auth";
 import { db } from "~/server/db";
 import { upsertChat } from "~/server/db/chat";
 import { chats } from "~/server/db/schema";
 import { checkRateLimit, logRequest } from "~/server/rate-limit";
-import { propagateAttributes } from "@langfuse/tracing";
-import { env } from "~/env";
-import { scrapePages } from "~/lib/ai-tools/scrapePages";
 
-const MAX_REQUESTS_PER_DAY = 10;
+import { env } from "~/env";
+import { langfuseSpanProcessor, withDbSpan } from "~/lib/telemetry";
+
 // 系统提示词
 const getSystemPrompt = (
   currentDate: string,
@@ -89,25 +98,32 @@ Before calling any tools, classify the request:
   - Cite multiple sources individually with a space: \`[Source A](https://...) [Source B](https://...)\`.`;
 
 export const maxDuration = 80;
-export async function POST(req: Request) {
-  // ─── 1. 认证守卫 (后端) ───
-  // Route Handler 本身是单次请求接口，一般不会在同一个 handler 内部多次获取 session，所以通常不需要 cache。
+const MAX_REQUESTS_PER_DAY = 10;
+
+async function handler(req: Request) {
+  // 1. 认证守卫
   const session = await auth.api.getSession({
     headers: req.headers,
   });
 
   if (!session) {
-    return new Response(JSON.stringify({ error: "User not authenticated" }), {
-      status: 401,
-      statusText: "Unauthorized",
-      headers: {
-        "Content-Type": "application/json",
+    return new Response(
+      JSON.stringify({
+        error: "User not authenticated",
+      }),
+      {
+        status: 401,
+        statusText: "Unauthorized",
+        headers: {
+          "Content-Type": "application/json",
+        },
       },
-    });
+    );
   }
 
-  // ─── 2. 速率限制检查：超限返回 429，管理员自动放行 ───
+  // 2. 速率限制检查
   const { allowed } = await checkRateLimit(session.user.id);
+
   if (!allowed) {
     return new Response(
       JSON.stringify({
@@ -116,96 +132,130 @@ export async function POST(req: Request) {
       {
         status: 429,
         statusText: "Too Many Requests",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
       },
     );
   }
 
-  /**
-   * ─── 3. 解析请求体 ───
-   * 前端 useChat 发送的是 UIMessage[]
-   */
-  // const { messages }: { messages: ChatUIMessage[]; chadId?: string } =
-  //   await req.json();
+  // 3. 解析请求参数
   const body = (await req.json()) as {
     messages: ChatUIMessage[];
     chatId?: string;
   };
   const { messages, chatId } = body;
 
-  if (!messages || messages.length === 0) {
-    return new Response("No messages provided", { status: 400 });
+  if (!messages?.length) {
+    return new Response("No messages provided", {
+      status: 400,
+    });
   }
 
-  // ─── 4. 两阶段持久化之【阶段 1：前置防断流创建】 ───
-  let curChatId = chatId;
-  let isNewChat = false;
+  // 4. 前置确定会话 ID（消除时序断层）
+  const isNewChat = !chatId;
+  const curChatId = chatId ?? crypto.randomUUID();
 
-  // 自动从最后一条用户消息生成标题概要（截取前 50 字）
   const lastMessage = messages[messages.length - 1];
-  const fallBackTitle = extractChatTitle(lastMessage);
+  const fallbackTitle = extractChatTitle(lastMessage);
 
-  if (!curChatId) {
-    isNewChat = true;
-    // 场景 A：客户端未传 chatId ──► 生成新 UUID 并立即在数据库建表存入用户提问
-    const newChatId = crypto.randomUUID();
-
-    await upsertChat({
-      userId: session.user.id,
-      chatId: newChatId,
-      title: fallBackTitle,
-      chatMessages: messages,
-    });
-    curChatId = newChatId;
-  } else {
-    // 场景 B：客户端传了 chatId ──► 快速验证所有权，防止越权写入
-    const chat = await db.query.chats.findFirst({
-      where: eq(chats.id, curChatId),
-    });
-
-    if (!chat || chat.userId !== session.user.id) {
-      return new Response("Chat not found or unauthorized", { status: 404 });
-    }
-  }
-
-  // 记录请求日志
-  await logRequest(session.user.id);
-
-  // 5. 将 UI 层消息转换为模型层消息
-  const modelMessages = await convertToModelMessages(messages);
-
+  // 5. 注入 Langfuse 追踪属性并启动业务执行流程
   return propagateAttributes(
     {
       traceName: "deepsearch-chat",
-      userId: session.user.id,
       sessionId: curChatId,
-      tags: [env.NODE_ENV, "agent", session.user.name],
+      userId: session.user.id,
+      // 清洗高基数标签：仅保留静态环境与应用分类，用户名归位到 userId
+      tags: [env.NODE_ENV, "agent"],
       metadata: {
         isNewChat: String(isNewChat),
       },
     },
-    () => {
-      // ─── 6. ⭐️ AI SDK 7 现代标准：构建自定义 UI Message Stream ───
+    async () => {
+      // ⭐️ 核心防御 1：在上下文完整的入口处捕获根跨度实例，供闭包引用
+      const rootSpan = otelTrace.getActiveSpan();
+
+      // 记录根观测节点的结构化输入摘要
+      updateActiveObservation({
+        input: {
+          chatId: curChatId,
+          messageCount: messages.length,
+        },
+      });
+
+      // 6. 阶段 1 持久化（或所有权核验）
+      if (isNewChat) {
+        await withDbSpan({
+          name: "create-new-chat",
+          type: "span",
+          input: {
+            chatId: curChatId,
+            messageCount: messages.length,
+          },
+          fn: () =>
+            upsertChat({
+              userId: session.user.id,
+              chatId: curChatId,
+              title: fallbackTitle,
+              chatMessages: messages,
+            }),
+        });
+      } else {
+        const chat = await withDbSpan({
+          name: "verify-chat-ownership",
+          type: "retriever", // 明确标记为只读检索类型
+          input: {
+            chatId: curChatId,
+          },
+          fn: () =>
+            db.query.chats.findFirst({
+              where: eq(chats.id, curChatId),
+            }),
+        });
+
+        if (!chat || chat.userId !== session.user.id) {
+          updateActiveObservation({
+            level: "ERROR",
+            statusMessage: "Chat not found or unauthorized",
+          });
+
+          return new Response("Chat not found or unauthorized", {
+            status: 404,
+          });
+        }
+      }
+
+      // 记录请求日志
+      await logRequest(session.user.id);
+      // 将 UI 层消息转换为模型层消息
+      const modelMessages = await convertToModelMessages(messages);
+
+      // 7. 构建 UI 消息流
       const stream = createUIMessageStream<ChatUIMessage>({
-        originalMessages: messages, // ⭐️ 传入原始消息，自动开启聚合模式
+        originalMessages: messages,
+
         execute: async ({ writer }) => {
-          // 通知客户端 Assistant 消息帧开始
-          writer.write({ type: "start" });
+          writer.write({
+            type: "start",
+          });
 
           // 若为新建会话，下发瞬态自定义数据事件（仅通知客户端 onData，不存入消息 parts 历史）
           if (isNewChat) {
             writer.write({
               type: "data-chat-created",
-              data: { chatId: curChatId, title: fallBackTitle },
+              data: {
+                chatId: curChatId,
+                title: fallbackTitle,
+              },
               transient: true,
             });
           }
 
-          // ⭐️ 关键点：在每次处理请求时，动态获取当下的系统时间字符串
+          // 在每次处理请求时，动态获取当下的系统时间字符串
           const currentDate = new Date().toLocaleString();
           const systemPrompt = getSystemPrompt(currentDate);
 
-          // 执行模型推理
+          // // 执行模型推理
           const result = streamText({
             model,
             instructions: systemPrompt,
@@ -214,64 +264,127 @@ export async function POST(req: Request) {
               searchWeb,
               scrapePages,
             },
-            // v7 中 maxSteps → stopWhen: isStepCount(n)
-            stopWhen: isStepCount(10), // 允许最多 10 轮工具多步迭代
-            // ⭐️ AI SDK 7 遥测配置：标记该调用链路并在已注册的 Langfuse 管道中追踪
+            stopWhen: isStepCount(10),
             telemetry: {
               isEnabled: true,
               functionId: "deepsearch-chat",
             },
-            // v7：onFinish → onEnd
-            onEnd: ({ usage, responseMessages }) => {
-              // console.log("Generation ended:", text);
-              // console.log("Token usage:", usage);
-              // 在调用过程中生成的响应消息，即从 AI 传来的新消息
-              // console.log("Response messages:", responseMessages);
+            // 客户端断开连接时向模型发送中止信号
+            abortSignal: req.signal,
+            onError: ({ error }) => {
+              console.error("[AI stream error]", error);
             },
           });
 
-          // 将模型推理事件流转换为 UI 消息流并合并
-          // sendStart: false 避免重复发送 start 帧
+          //  将模型推理事件流转换为 UI 消息流并合并
           writer.merge(
             // toUIMessageStream 负责“把模型 stream 转成 UI Message Stream”
             toUIMessageStream({
               stream: result.stream,
-              sendStart: false,
+              sendStart: false, // false 避免重复发送 start 帧
             }),
           );
         },
-        onEnd: async ({ messages: updatedMessage, isAborted }) => {
-          /*
-          ⭐️ 两阶段持久化之【阶段 2：流结束自动聚合入库】
-          AI SDK 7 已经自动完成工具调用、工具结果与模型回答的因果树合并
-          我们不需要使用 v4 提供的 appendResponseMessages API 来手动合并消息
-          所以直接使用 upsertChat 来更新数据库中的消息列表
-           */
 
-          // 这里是已经合并后的消息列表，包含用户提问和模型回答，标题也是用最新的
-          const lastMessage = updatedMessage[updatedMessage.length - 1];
-          if (!lastMessage) return;
-          const fallBackTitle = extractChatTitle(lastMessage);
+        onEnd: async ({
+          messages: updatedMessages,
+          isAborted,
+          finishReason,
+        }) => {
+          // ⭐️ 核心防御 2：将 onEnd 包裹在根跨度上下文内，确保 save-chat-history 100% 挂载在根节点下
+          const activeContext = rootSpan
+            ? otelTrace.setSpan(otelContext.active(), rootSpan)
+            : otelContext.active();
 
-          try {
-            // 保存完整聊天记录
-            await upsertChat({
-              userId: session.user.id,
-              chatId: curChatId,
-              title: fallBackTitle,
-              chatMessages: updatedMessage,
-            });
-          } catch (error) {
-            console.error("Failed to persist chat messages onEnd:", error);
-          }
+          await otelContext.with(activeContext, async () => {
+            const finalMessage = updatedMessages[updatedMessages.length - 1];
+            if (!finalMessage) {
+              rootSpan?.end();
+              return;
+            }
+
+            const updatedTitle = extractChatTitle(finalMessage);
+
+            try {
+              // 阶段 2 持久化：更新完整对话记录
+              await withDbSpan({
+                name: "save-chat-history",
+                type: "span",
+                input: {
+                  chatId: curChatId,
+                  messageCount: updatedMessages.length,
+                },
+                fn: () =>
+                  upsertChat({
+                    userId: session.user.id,
+                    chatId: curChatId,
+                    title: updatedTitle,
+                    chatMessages: updatedMessages,
+                  }),
+              });
+
+              // 记录最终输出摘要
+              updateActiveObservation({
+                output: {
+                  chatId: curChatId,
+                  messageCount: updatedMessages.length,
+                  isAborted,
+                  finishReason,
+                  persisted: true,
+                },
+              });
+            } catch (error) {
+              const errorMessage =
+                error instanceof Error ? error.message : String(error);
+
+              updateActiveObservation({
+                level: "ERROR",
+                statusMessage: errorMessage,
+                output: {
+                  chatId: curChatId,
+                  persisted: false,
+                },
+              });
+
+              console.error("Failed to persist chat messages onEnd:", error);
+            } finally {
+              // ⭐️ 核心防御 3：无论成功还是异常，显式结束闭包捕获的根跨度
+              // observe(..., { endOnExit: false }) 不会自动结束，
+              // 因此流完成后显式结束 root observation。
+              rootSpan?.end();
+            }
+          });
         },
       });
 
-      /**
-       * 7. 将模型结果转换成 useChat 能直接消费的 UI Message Stream
-       * createUIMessageStreamResponse 负责“把 UI Message Stream 包装成 HTTP Response”
-       */
-      return createUIMessageStreamResponse({ stream });
+      // 8. 注册响应后异步刷盘任务
+      after(async () => {
+        try {
+          await langfuseSpanProcessor.forceFlush();
+        } catch (e) {
+          console.error("[langfuse] flush failed", e);
+        }
+      });
+
+      return createUIMessageStreamResponse({
+        stream,
+      });
     },
   );
 }
+
+/**
+ * ⭐️ 顶层观测包装：
+ * endOnExit: false
+ * → Route Handler 返回 Response 后不要立即结束 root observation
+ * → 等 UI stream 真正结束时，再手动 end()
+ * → 确保流式响应返回 HTTP 响应头后，根跨度继续等待流传输完成
+ *
+ * captureInput/Output: false 避免抓取不可序列化的网络流原始对象
+ */
+export const POST = observe(handler, {
+  name: "deepsearch-chat",
+  endOnExit: false,
+  captureInput: false,
+  captureOutput: false,
+});

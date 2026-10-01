@@ -18,6 +18,8 @@ Discord
  */
 import { env } from "./env";
 import { runProxy } from "./lib/proxy";
+import { langfuseSpanProcessor } from "./lib/telemetry";
+import { NodeSDK } from "@opentelemetry/sdk-node";
 
 export async function register() {
   // ⭐️ 核心守卫：仅在 Node.js 服务端运行时激活遥测与代理
@@ -27,28 +29,23 @@ export async function register() {
 
     // 2. 动态导入 OpenTelemetry 与 Langfuse 遥测模块（避免污染客户端打包）
     const { registerOTel } = await import("@vercel/otel");
-    const { LangfuseSpanProcessor } = await import("@langfuse/otel");
     const { registerTelemetry } = await import("ai");
     const { LangfuseVercelAiSdkIntegration } =
       await import("@langfuse/vercel-ai-sdk");
     // const { NodeSDK } = await import("@opentelemetry/sdk-node");
 
     // 3. 注册 OpenTelemetry 并挂载 LangfuseSpanProcessor
-    registerOTel({
-      serviceName: "deepsearch-course",
-      spanProcessors: [
-        new LangfuseSpanProcessor({
-          environment: env.NODE_ENV, // ⭐️ 全局绑定当前部署环境（development / production）
-        }),
-      ],
-    });
+    // registerOTel({
+    //   serviceName: "deepsearch-course",
+    //   spanProcessors: [langfuseSpanProcessor],
+    // });
 
     // 纯手动
-    // const sdk = new NodeSDK({
-    //   serviceName: "deepsearch-course",
-    //   spanProcessors: [new LangfuseSpanProcessor()],
-    // });
-    // sdk.start();
+    const sdk = new NodeSDK({
+      serviceName: "deepsearch-course",
+      spanProcessors: [langfuseSpanProcessor],
+    });
+    sdk.start();
 
     // 4. 将 Langfuse 遥测集成器挂载到 AI SDK 7 全局生命周期中
     registerTelemetry(new LangfuseVercelAiSdkIntegration());
