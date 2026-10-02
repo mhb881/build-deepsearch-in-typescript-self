@@ -10,6 +10,7 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "dev": "next dev",
+    "evals": "evalite watch",
     "lint": "eslint .",
     "lint:fix": "next lint --fix",
     "preview": "next build && next start",
@@ -78,5 +79,8 @@
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.1.11"
   },
+  "engines": {
+    "node": ">=22 <23"
+   },
   "packageManager": "pnpm@12.8.1"
 }

@@ -18,8 +18,8 @@ Discord
  */
 import { env } from "./env";
 import { runProxy } from "./lib/proxy";
-import { langfuseSpanProcessor } from "./lib/telemetry";
 import { NodeSDK } from "@opentelemetry/sdk-node";
+import { langfuseSpanProcessor } from "./lib/telemetry";
 
 export async function register() {
   // ⭐️ 核心守卫：仅在 Node.js 服务端运行时激活遥测与代理

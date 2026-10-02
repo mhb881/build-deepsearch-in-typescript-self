@@ -175,9 +175,14 @@ async function handler(req: Request) {
       // ⭐️ 核心防御 1：在上下文完整的入口处捕获根跨度实例，供闭包引用
       const rootSpan = otelTrace.getActiveSpan();
 
+      const userQueryText =
+        lastMessage?.parts.find((p) => p.type === "text")?.text ??
+        fallbackTitle;
+
       // 记录根观测节点的结构化输入摘要
       updateActiveObservation({
-        input: {
+        input: userQueryText, // ⭐️ 列表页将直接展示用户的问题
+        metadata: {
           chatId: curChatId,
           messageCount: messages.length,
         },
@@ -324,8 +329,12 @@ async function handler(req: Request) {
               });
 
               // 记录最终输出摘要
+              const finalAiText =
+                finalMessage?.parts.find((p) => p.type === "text")?.text ?? "";
+
               updateActiveObservation({
-                output: {
+                output: finalAiText, // ⭐️ 列表页直接展示 AI 的回复
+                metadata: {
                   chatId: curChatId,
                   messageCount: updatedMessages.length,
                   isAborted,

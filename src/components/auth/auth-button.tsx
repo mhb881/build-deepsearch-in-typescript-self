@@ -22,13 +22,20 @@ export function AuthButton({ isAuthenticated, userImage }: AuthButtonProps) {
           alt="User avatar"
           width={32}
           height={32}
-          className="rounded-full"
+          className="h-8 w-8 rounded-full"
         />
       )}
       <button
-        onClick={() => {
-          router.push("/");
-          authClient.signOut();
+        onClick={async () => {
+          // ⭐️ 必须 await 等待后端成功注销并清理 Cookie
+          await authClient.signOut({
+            fetchOptions: {
+              onSuccess: () => {
+                router.push("/");
+                router.refresh();
+              },
+            },
+          });
         }}
         className="flex w-full cursor-pointer items-center justify-center p-1 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none"
       >
@@ -40,7 +47,16 @@ export function AuthButton({ isAuthenticated, userImage }: AuthButtonProps) {
     </div>
   ) : (
     <button
-      onClick={() => authClient.signIn.social({ provider: "discord" })}
+      onClick={async () => {
+        await authClient.signIn.social({
+          provider: "discord",
+          fetchOptions: {
+            onSuccess: () => {
+              router.refresh();
+            },
+          },
+        });
+      }}
       className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-gray-100 p-3 text-sm text-gray-700 hover:bg-gray-200 focus:ring-2 focus:ring-blue-400 focus:outline-none dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
     >
       <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">

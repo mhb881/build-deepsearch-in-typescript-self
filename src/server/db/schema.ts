@@ -43,7 +43,7 @@ export const account = createTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    issuer: text("issuer").notNull(),
+    issuer: text("issuer"),
     accountId: text("account_id").notNull(),
     providerId: text("provider_id").notNull(),
     accessToken: text("access_token"),
@@ -236,7 +236,8 @@ export const messagesRelations = relations(messages, ({ one }) => ({
   }),
 }));
 
-export declare namespace DB {
+// eslint-disable-next-line @typescript-eslint/no-namespace
+export namespace DB {
   export type User = InferSelectModel<typeof user>;
   export type NewUser = InferInsertModel<typeof user>;
 
