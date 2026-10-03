@@ -1,5 +1,3 @@
-"use client";
-
 import { Globe, AlertTriangle } from "lucide-react";
 import type { ScrapePagesOutput } from "../types";
 import { ScrapePageItem } from "./scrape-page-item";

@@ -1,5 +1,3 @@
-"use client";
-
 import type { ScrapePagesOutput, SearchWebResultItem } from "./types";
 import { SearchWebView } from "./search-web/search-web-view";
 import { ScrapePagesView } from "./scrape-pages/scrape-pages-view";
