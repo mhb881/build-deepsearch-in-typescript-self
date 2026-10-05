@@ -1,7 +1,8 @@
 // src/server/auth/session.ts
-import { cache } from "react";
-import { auth } from "./index";
 import { headers } from "next/headers";
+import { cache } from "react";
+
+import { auth } from "./index";
 
 /**
  * ⭐️ React 19 请求级记忆化获取 Session

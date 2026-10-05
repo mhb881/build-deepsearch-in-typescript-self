@@ -1,6 +1,7 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
+import simpleImportSort from "eslint-plugin-simple-import-sort";
 /**
  * 官方推荐使用 projectService: true 代替过时的 project: ["./tsconfig.json"]。
  * 它会使用与 VS Code TypeScript 相同的 Project Service 引擎，大幅减少冷启动开销并共享缓存。
@@ -9,6 +10,9 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs, // 已内置 typescript-eslint/recommended，无需重复导入
   {
+    plugins: {
+      "simple-import-sort": simpleImportSort,
+    },
     files: ["src/**/*.{ts,tsx}"],
     // languageOptions: {
     //   parserOptions: {
@@ -22,6 +26,8 @@ const eslintConfig = defineConfig([
         "warn",
         { argsIgnorePattern: "^_" },
       ],
+      "simple-import-sort/imports": "error",
+      "simple-import-sort/exports": "error",
       // "@typescript-eslint/consistent-type-imports": [
       //   "warn",
       //   {

@@ -1,35 +1,28 @@
 import {
-  convertToModelMessages,
-  createUIMessageStream,
-  createUIMessageStreamResponse,
-  isStepCount,
-  streamText,
-  toUIMessageStream,
-} from "ai";
-import { after } from "next/server";
-import {
   observe,
   propagateAttributes,
   updateActiveObservation,
 } from "@langfuse/tracing";
 import { context as otelContext, trace as otelTrace } from "@opentelemetry/api";
+import {
+  convertToModelMessages,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
+  toUIMessageStream,
+} from "ai";
 import { eq } from "drizzle-orm";
+import { after } from "next/server";
 
-import { searchWeb } from "~/lib/ai-tools/searchWeb";
-import { scrapePages } from "~/lib/ai-tools/scrapePages";
-import { model } from "~/lib/ai/model";
+import { streamFromDeepSearch } from "~/deepsearch";
+import { env } from "~/env";
+import { langfuseSpanProcessor, withDbSpan } from "~/lib/telemetry";
 import type { ChatUIMessage } from "~/lib/types/ai-types";
 import { extractChatTitle } from "~/lib/utils/ai-utils";
-
 import { auth } from "~/server/auth";
 import { db } from "~/server/db";
 import { upsertChat } from "~/server/db/chat";
 import { chats } from "~/server/db/schema";
 import { checkRateLimit, logRequest } from "~/server/rate-limit";
-
-import { env } from "~/env";
-import { langfuseSpanProcessor, withDbSpan } from "~/lib/telemetry";
-import { streamFromDeepSearch } from "~/deepsearch";
 
 export const maxDuration = 80;
 const MAX_REQUESTS_PER_DAY = 10;

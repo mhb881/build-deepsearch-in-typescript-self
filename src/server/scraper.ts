@@ -1,8 +1,10 @@
-import TurndownService from "turndown";
+import { setTimeout } from "node:timers/promises";
+
 import * as cheerio from "cheerio";
 import robotsParser from "robots-parser";
+import TurndownService from "turndown";
+
 import { cacheWithRedis } from "./redis/redis";
-import { setTimeout } from "node:timers/promises";
 
 export const DEFAULT_MAX_RETRIES = 3;
 const MIN_DELAY_MS = 500;

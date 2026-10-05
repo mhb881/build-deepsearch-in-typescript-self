@@ -1,6 +1,7 @@
-import { evalite } from "evalite";
-import { askDeepSearch } from "~/deepsearch";
 import type { UIMessage } from "ai";
+import { evalite } from "evalite";
+
+import { askDeepSearch } from "~/deepsearch";
 
 evalite("Deep Search Eval", {
   // 1. 测试数据集：提供两个具有代表性的技术调研问题
@@ -34,6 +35,34 @@ evalite("Deep Search Eval", {
           },
         ],
       },
+      {
+        input: [
+          {
+            id: "3",
+            role: "user",
+            parts: [
+              {
+                type: "text",
+                text: "Compare, react, and view JS.",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        input: [
+          {
+            id: "4",
+            role: "user",
+            parts: [
+              {
+                type: "text",
+                text: "Best practices for handling authentication in Next.js.",
+              },
+            ],
+          },
+        ],
+      },
     ];
   },
 
@@ -42,6 +71,19 @@ evalite("Deep Search Eval", {
     return await askDeepSearch(input);
   },
 
-  // 3. 打分器：当前先跑通真实业务链路，留空 scorers 观察生成结果
-  scorers: [],
+  // 3. 确定性打分器：断言模型回答中必须包含 Markdown 格式链接 [text](url)
+  scorers: [
+    {
+      name: "Contains Links",
+      description: "Checks if the output contains any markdown links.",
+      scorer: ({ output }) => {
+        // 匹配 Markdown 格式链接：[链接文本](https://...)
+        const markdownLinkRegex = /\[([^\]]+)\]\(([^)]+)\)/;
+        // 更好的做法：确保模型引用的每一个网址都明确带有安全的 http:// 或 https:// 协议头
+        const validUrlRegex = /\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)/g;
+        const containsLinks = validUrlRegex.test(output);
+        return containsLinks ? 1 : 0;
+      },
+    },
+  ],
 });

@@ -1,14 +1,15 @@
 import {
-  streamText,
-  isStepCount,
   convertToModelMessages,
+  isStepCount,
   type ModelMessage,
-  type UIMessage,
+  streamText,
   type TelemetryOptions,
+  type UIMessage,
 } from "ai";
+
 import { model } from "~/lib/ai/model";
-import { searchWeb } from "~/lib/ai-tools/searchWeb";
 import { scrapePages } from "~/lib/ai-tools/scrapePages";
+import { searchWeb } from "~/lib/ai-tools/searchWeb";
 
 const getSystemPrompt = (
   currentDate: string,
@@ -26,7 +27,7 @@ When users ask for up-to-date or recent information, use the current date to pro
 Before calling any tools, classify the request:
 
 1. **Direct Answer Mode (No Tools Needed)**:
-   - **Condition**: The question can be accurately, completely, and definitively answered using internal knowledge (e.g., standard algorithms, language syntax, foundational science, established design patterns, generic concepts, or basic translations).
+   - **Condition**: The question can be accurately, completely, and definitively answered using internal knowledge.
    - **Action**: Answer directly and rigorously without invoking 'searchWeb' or 'scrapePages'. Do not create fabricated citations.
 
 2. **Research Mode (Mandatory Two-Phase Workflow)**:
