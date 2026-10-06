@@ -23,9 +23,18 @@ import { db } from "~/server/db";
 import { upsertChat } from "~/server/db/chat";
 import { chats } from "~/server/db/schema";
 import { checkRateLimit, logRequest } from "~/server/rate-limit";
+import { checkGlobalRateLimit } from "~/server/redis/global-rate-limit";
 
 export const maxDuration = 80;
 const MAX_REQUESTS_PER_DAY = 10;
+
+// 全局模型调用限流参数：例如设置 20 秒内最多允许 1 次请求（便于测试验证）
+const globalRateLimitConfig = {
+  maxRequests: 15,
+  windowMs: 60_000, // 60 秒窗口
+  keyPrefix: "chat_llm",
+  maxRetries: 3,
+};
 
 async function handler(req: Request) {
   // 1. 认证守卫
@@ -48,9 +57,26 @@ async function handler(req: Request) {
     );
   }
 
-  // 2. 速率限制检查
-  const { allowed } = await checkRateLimit(session.user.id);
+  // 全局速率检查
+  const rateLimitCheck = await checkGlobalRateLimit(globalRateLimitConfig);
+  if (!rateLimitCheck.allowed) {
+    return new Response(
+      JSON.stringify({
+        error: `Rate limit exceeded. Maximum ${globalRateLimitConfig.maxRequests} requests per window.`,
+      }),
+      {
+        status: 429,
+        statusText: "Too Many Requests",
+        headers: {
+          "Content-Type": "application/json",
+          "Retry-After": String(Math.ceil(rateLimitCheck.retryAfterMs / 1000)),
+        },
+      },
+    );
+  }
 
+  // 2. 个人用户速率限制检查
+  const { allowed } = await checkRateLimit(session.user.id);
   if (!allowed) {
     return new Response(
       JSON.stringify({

@@ -1,6 +1,7 @@
 // lib/utils/ai-utils.ts
-import type { ChatUIMessage } from "../types/ai-types";
 import type { DB } from "~/server/db/schema";
+
+import type { ChatUIMessage } from "../types/ai-types";
 
 export const extractChatTitle = (lastMessage?: ChatUIMessage) => {
   // 自动从最后一条用户消息生成标题概要（截取前 50 字）
