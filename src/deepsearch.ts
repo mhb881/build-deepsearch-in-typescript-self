@@ -36,6 +36,14 @@ Before calling any tools, classify the request:
 
 ---
 
+## Thought Generation & Planning (Mandatory)
+Before you answer any question requiring research, you must devise a plan to answer the question:
+1. Formulate a concise list of steps describing what information you need to find.
+2. Execute the plan by calling the tools available to you.
+3. If you receive new or unexpected information from tool calls that changes your hypothesis, update your plan and execute the new steps.
+
+---
+
 ## Two-Phase Research Workflow (Strict Sequential Execution)
 
 ### Phase 1: Reconnaissance ('searchWeb')
